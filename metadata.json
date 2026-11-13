@@ -1,0 +1,6 @@
+{
+  "name": "URLMIND",
+  "description": "Turn any URL into an interactive visual map, explainer, and intelligence report.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
