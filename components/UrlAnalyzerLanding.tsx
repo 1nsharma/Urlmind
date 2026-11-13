@@ -8,23 +8,31 @@ import {
   CheckCircle2,
   Code2,
   FileCode2,
+  FileSpreadsheet,
   Globe,
   Loader2,
   RefreshCw,
   ShieldAlert,
+  Upload,
 } from 'lucide-react';
 import {
   classifyUrl,
   getCategoryLabel,
   normalizeAndValidateUrl,
 } from '@/lib/classifier';
+import {
+  buildReportFromTechCsv,
+  SAMPLE_WAPPALYZER_CSV,
+} from '@/lib/csvImporter';
 import { SHOWCASE_PRESET_METAS } from '@/lib/showcasePresets';
+import type { UrlIntelligenceReport } from '@/lib/types';
 
 interface UrlAnalyzerLandingProps {
   onAnalyze: (
     url: string,
     options?: { usePreset?: boolean; forceRefresh?: boolean },
   ) => Promise<void>;
+  onImportCsv: (report: UrlIntelligenceReport) => void;
   isLoading: boolean;
   pipelineStage: number;
   errorMessage: string | null;
@@ -60,12 +68,16 @@ function getPresetIcon(id: string) {
 
 export default function UrlAnalyzerLanding({
   onAnalyze,
+  onImportCsv,
   isLoading,
   pipelineStage,
   errorMessage,
 }: UrlAnalyzerLandingProps) {
+  const [inputMode, setInputMode] = useState<'url' | 'csv'>('url');
   const [urlInput, setUrlInput] = useState('');
   const [forceRefresh, setForceRefresh] = useState(false);
+  const [csvDomain, setCsvDomain] = useState('');
+  const [csvText, setCsvText] = useState('');
   const [validationError, setValidationError] = useState<string | null>(null);
 
   const trimmed = urlInput.trim();
@@ -86,6 +98,35 @@ export default function UrlAnalyzerLanding({
     });
   };
 
+  const handleCsvSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const report = buildReportFromTechCsv(csvText, csvDomain);
+      setValidationError(null);
+      onImportCsv(report);
+    } catch (err) {
+      setValidationError(
+        err instanceof Error
+          ? err.message
+          : 'Could not parse Wappalyzer / BuiltWith CSV data.',
+      );
+    }
+  };
+
+  const handleCsvFileUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      setCsvText(text);
+      setValidationError(null);
+    } catch {
+      setValidationError('Unable to read the selected CSV file.');
+    }
+  };
+
   return (
     <div className="max-w-[1200px] mx-auto px-4 sm:px-6 py-10 sm:py-16">
       <div className="max-w-3xl mx-auto text-center">
@@ -97,109 +138,232 @@ export default function UrlAnalyzerLanding({
         </h1>
         <p className="mt-4 text-base sm:text-lg text-slate-600 dark:text-slate-300 max-w-2xl mx-auto leading-relaxed">
           Convert any public website, web app, GitHub repository, API documentation,
-          article, YouTube video, or social post into an interactive graph, live
-          Mermaid diagram, 60-second explainer, and intelligence report.
+          article, YouTube video, social post, or Wappalyzer CSV into an interactive
+          graph, live Mermaid diagram, and intelligence report.
         </p>
 
-        <form
-          onSubmit={handleSubmit}
-          noValidate
-          className="mt-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-2 shadow-sm"
-        >
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-            <label htmlFor="urlmind-url-input" className="sr-only">
-              Public URL to analyze
-            </label>
-            <div className="flex-1 flex items-center gap-3 px-3">
-              <Globe
-                className="w-4 h-4 text-slate-400 shrink-0"
-                aria-hidden="true"
-              />
+        {/* Mode Switcher */}
+        <div className="mt-7 inline-flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-lg border border-slate-200 dark:border-slate-800">
+          <button
+            type="button"
+            onClick={() => {
+              setInputMode('url');
+              setValidationError(null);
+            }}
+            className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer ${
+              inputMode === 'url'
+                ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            <Globe className="w-3.5 h-3.5" aria-hidden="true" />
+            <span>Analyze URL</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setInputMode('csv');
+              setValidationError(null);
+            }}
+            className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer ${
+              inputMode === 'csv'
+                ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5" aria-hidden="true" />
+            <span>Import Tech CSV</span>
+          </button>
+        </div>
+
+        {inputMode === 'url' ? (
+          <form
+            onSubmit={handleSubmit}
+            noValidate
+            className="mt-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-2 shadow-sm"
+          >
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+              <label htmlFor="urlmind-url-input" className="sr-only">
+                Public URL to analyze
+              </label>
+              <div className="flex-1 flex items-center gap-3 px-3">
+                <Globe
+                  className="w-4 h-4 text-slate-400 shrink-0"
+                  aria-hidden="true"
+                />
+                <input
+                  id="urlmind-url-input"
+                  type="url"
+                  value={urlInput}
+                  onChange={(e) => {
+                    setUrlInput(e.target.value);
+                    if (validationError) setValidationError(null);
+                  }}
+                  placeholder="https://react.dev, github.com/vercel/ai, or youtube.com/watch?v=..."
+                  disabled={isLoading}
+                  className="w-full py-2.5 text-sm sm:text-base bg-transparent text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none font-mono"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="inline-flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-60 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
+                    <span>Analyzing</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Analyze URL</span>
+                    <ArrowRight className="w-4 h-4" aria-hidden="true" />
+                  </>
+                )}
+              </button>
+            </div>
+
+            <div className="px-3 pt-2 pb-1 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
+              <div className="flex flex-wrap items-center gap-3">
+                {detectedCategory ? (
+                  <span>
+                    Classifier preview:{' '}
+                    <strong className="font-medium text-slate-800 dark:text-slate-200">
+                      {getCategoryLabel(detectedCategory)}
+                    </strong>
+                  </span>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span>Quick fill:</span>
+                    <button
+                      type="button"
+                      disabled={isLoading}
+                      onClick={() => {
+                        setValidationError(null);
+                        setUrlInput('https://www.youtube.com/watch?v=M7lc1UVf-VE');
+                      }}
+                      className="font-mono text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                    >
+                      YouTube Video
+                    </button>
+                    <span aria-hidden="true">·</span>
+                    <button
+                      type="button"
+                      disabled={isLoading}
+                      onClick={() => {
+                        setValidationError(null);
+                        setUrlInput('https://x.com/vercel');
+                      }}
+                      className="font-mono text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                    >
+                      X Profile
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <label className="inline-flex items-center gap-1.5 cursor-pointer select-none text-slate-600 dark:text-slate-400">
+                <input
+                  type="checkbox"
+                  checked={forceRefresh}
+                  disabled={isLoading}
+                  onChange={(e) => setForceRefresh(e.target.checked)}
+                  className="rounded border-slate-300 dark:border-slate-700 text-blue-600 focus:ring-blue-600"
+                />
+                <RefreshCw className="w-3 h-3 text-slate-400" aria-hidden="true" />
+                <span>Bypass server cache (Force live)</span>
+              </label>
+            </div>
+          </form>
+        ) : (
+          <form
+            onSubmit={handleCsvSubmit}
+            noValidate
+            className="mt-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-sm text-left space-y-3"
+          >
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <p className="text-xs font-semibold text-slate-900 dark:text-white">
+                  Import Wappalyzer / BuiltWith Tech CSV
+                </p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Upload or paste exported technology rows (URL, Technology, Categories, Version) to synthesize a full architecture map.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCsvDomain('https://gitdiagram.com');
+                    setCsvText(SAMPLE_WAPPALYZER_CSV);
+                    setValidationError(null);
+                  }}
+                  className="px-2.5 py-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-900/60 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-950/30 cursor-pointer"
+                >
+                  Load Sample CSV
+                </button>
+                <label className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer">
+                  <Upload className="w-3.5 h-3.5" aria-hidden="true" />
+                  <span>Upload .csv</span>
+                  <input
+                    type="file"
+                    accept=".csv,text/csv"
+                    onChange={(e) => void handleCsvFileUpload(e)}
+                    className="sr-only"
+                  />
+                </label>
+              </div>
+            </div>
+
+            <div>
+              <label
+                htmlFor="csv-domain-input"
+                className="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1"
+              >
+                Target Domain / URL (optional if included in CSV)
+              </label>
               <input
-                id="urlmind-url-input"
-                type="url"
-                value={urlInput}
+                id="csv-domain-input"
+                type="text"
+                value={csvDomain}
+                onChange={(e) => setCsvDomain(e.target.value)}
+                placeholder="https://gitdiagram.com"
+                className="w-full px-3 py-2 text-xs font-mono bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-600"
+              />
+            </div>
+
+            <div>
+              <label
+                htmlFor="csv-payload-textarea"
+                className="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1"
+              >
+                CSV Rows
+              </label>
+              <textarea
+                id="csv-payload-textarea"
+                rows={5}
+                value={csvText}
                 onChange={(e) => {
-                  setUrlInput(e.target.value);
+                  setCsvText(e.target.value);
                   if (validationError) setValidationError(null);
                 }}
-                placeholder="https://react.dev, github.com/vercel/ai, or youtube.com/watch?v=..."
-                disabled={isLoading}
-                className="w-full py-2.5 text-sm sm:text-base bg-transparent text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none font-mono"
+                placeholder={'URL,Technology,Categories,Version\nhttps://example.com,Next.js,Web frameworks,15'}
+                className="w-full px-3 py-2 text-xs font-mono bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-600"
               />
             </div>
 
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="inline-flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-60 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
-            >
-              {isLoading ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
-                  <span>Analyzing</span>
-                </>
-              ) : (
-                <>
-                  <span>Analyze URL</span>
-                  <ArrowRight className="w-4 h-4" aria-hidden="true" />
-                </>
-              )}
-            </button>
-          </div>
-
-          <div className="px-3 pt-2 pb-1 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
-            <div className="flex flex-wrap items-center gap-3">
-              {detectedCategory ? (
-                <span>
-                  Classifier preview:{' '}
-                  <strong className="font-medium text-slate-800 dark:text-slate-200">
-                    {getCategoryLabel(detectedCategory)}
-                  </strong>
-                </span>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <span>Quick fill:</span>
-                  <button
-                    type="button"
-                    disabled={isLoading}
-                    onClick={() => {
-                      setValidationError(null);
-                      setUrlInput('https://www.youtube.com/watch?v=M7lc1UVf-VE');
-                    }}
-                    className="font-mono text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
-                  >
-                    YouTube Video
-                  </button>
-                  <span aria-hidden="true">·</span>
-                  <button
-                    type="button"
-                    disabled={isLoading}
-                    onClick={() => {
-                      setValidationError(null);
-                      setUrlInput('https://x.com/vercel');
-                    }}
-                    className="font-mono text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
-                  >
-                    X Profile
-                  </button>
-                </div>
-              )}
+            <div className="flex justify-end">
+              <button
+                type="submit"
+                className="inline-flex items-center gap-2 px-5 py-2 text-xs sm:text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors cursor-pointer"
+              >
+                <span>Build Stack Architecture</span>
+                <ArrowRight className="w-4 h-4" aria-hidden="true" />
+              </button>
             </div>
-
-            <label className="inline-flex items-center gap-1.5 cursor-pointer select-none text-slate-600 dark:text-slate-400">
-              <input
-                type="checkbox"
-                checked={forceRefresh}
-                disabled={isLoading}
-                onChange={(e) => setForceRefresh(e.target.checked)}
-                className="rounded border-slate-300 dark:border-slate-700 text-blue-600 focus:ring-blue-600"
-              />
-              <RefreshCw className="w-3 h-3 text-slate-400" aria-hidden="true" />
-              <span>Bypass server cache (Force live)</span>
-            </label>
-          </div>
-        </form>
+          </form>
+        )}
 
         {displayError && (
           <div

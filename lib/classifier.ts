@@ -342,5 +342,224 @@ export function detectHtmlTechnologies(
     });
   }
 
+  // UI & Icons
+  if (lowerHtml.includes('data-radix-') || lowerHtml.includes('radix-ui')) {
+    add({
+      name: 'Radix UI',
+      category: 'UI & Icons',
+      confidence: 'detected',
+      evidence: 'DOM attributes matching Radix UI primitives (data-radix-*)',
+    });
+  }
+  if (lowerHtml.includes('class="lucide') || lowerHtml.includes('lucide-react')) {
+    add({
+      name: 'Lucide Icons',
+      category: 'UI & Icons',
+      confidence: 'detected',
+      evidence: 'Lucide SVG icon class signatures detected in DOM',
+    });
+  }
+  if (lowerHtml.includes('data-slot=') && (lowerHtml.includes('data-radix-') || found.has('Tailwind CSS'))) {
+    add({
+      name: 'shadcn/ui',
+      category: 'UI & Icons',
+      confidence: 'detected',
+      evidence: 'Component slot attributes (data-slot) paired with Tailwind/Radix patterns',
+    });
+  }
+
+  // Graphics & Visualization
+  if (lowerHtml.includes('mermaid') || lowerHtml.includes('data-processed="true"')) {
+    add({
+      name: 'Mermaid.js',
+      category: 'Graphics / Visualization',
+      confidence: 'detected',
+      evidence: 'Mermaid diagram container or script bundle detected in HTML',
+    });
+  }
+
+  // Bundlers & Additional Frameworks
+  if (lowerHtml.includes('__turbopack_') || lowerHtml.includes('turbopack')) {
+    add({
+      name: 'Turbopack',
+      category: 'Bundler & Build',
+      confidence: 'detected',
+      evidence: 'Turbopack runtime chunk signature detected in page scripts',
+    });
+  }
+  if (lowerHtml.includes('/@vite/client') || lowerHtml.includes('vite/preload-helper')) {
+    add({
+      name: 'Vite',
+      category: 'Bundler & Build',
+      confidence: 'detected',
+      evidence: 'Vite client/preload module signature detected in HTML',
+    });
+  }
+  if (lowerHtml.includes('__remixcontext') || lowerHtml.includes('__remixmanifest')) {
+    add({
+      name: 'Remix',
+      category: 'Framework',
+      confidence: 'detected',
+      evidence: 'Remix runtime context payload (__remixContext) detected',
+    });
+  }
+  if (lowerHtml.includes('__sveltekit_')) {
+    add({
+      name: 'SvelteKit',
+      category: 'Framework',
+      confidence: 'detected',
+      evidence: 'SvelteKit hydration runtime (__sveltekit_) detected',
+    });
+  }
+
+  // Analytics
+  if (
+    lowerHtml.includes('posthog.init') ||
+    lowerHtml.includes('us.i.posthog.com') ||
+    lowerHtml.includes('app.posthog.com') ||
+    lowerHtml.includes('://posthog.com') ||
+    lowerHtml.includes('posthog-js')
+  ) {
+    add({
+      name: 'PostHog',
+      category: 'Analytics',
+      confidence: 'detected',
+      evidence: 'PostHog analytics script or ingestion endpoint detected',
+    });
+  }
+  if (lowerHtml.includes('plausible.io/js')) {
+    add({
+      name: 'Plausible Analytics',
+      category: 'Analytics',
+      confidence: 'detected',
+      evidence: 'Script reference to plausible.io/js',
+    });
+  }
+  if (lowerHtml.includes('mixpanel') || lowerHtml.includes('cdn.mxpnl.com')) {
+    add({
+      name: 'Mixpanel',
+      category: 'Analytics',
+      confidence: 'detected',
+      evidence: 'Mixpanel SDK or tracking endpoint signature detected',
+    });
+  }
+  if (lowerHtml.includes('static.hotjar.com') || lowerHtml.includes('hotjar.com/c/hotjar-')) {
+    add({
+      name: 'Hotjar',
+      category: 'Analytics',
+      confidence: 'detected',
+      evidence: 'Hotjar tracking snippet detected in page source',
+    });
+  }
+  if (lowerHtml.includes('_vercel/insights') || lowerHtml.includes('va.vercel-scripts.com')) {
+    add({
+      name: 'Vercel Analytics',
+      category: 'Analytics',
+      confidence: 'detected',
+      evidence: 'Vercel Web Analytics script path detected',
+    });
+  }
+
+  // SEO / Metadata & Performance
+  if (
+    lowerHtml.includes('property="og:title"') ||
+    lowerHtml.includes("property='og:title'") ||
+    lowerHtml.includes('property="og:image"')
+  ) {
+    add({
+      name: 'Open Graph Protocol',
+      category: 'SEO / Metadata',
+      confidence: 'detected',
+      evidence: 'Open Graph <meta property="og:*"> tags present in <head>',
+    });
+  }
+  if (lowerHtml.includes('name="twitter:card"') || lowerHtml.includes("name='twitter:card'")) {
+    add({
+      name: 'Twitter Cards',
+      category: 'SEO / Metadata',
+      confidence: 'detected',
+      evidence: 'Twitter Card <meta name="twitter:card"> metadata detected',
+    });
+  }
+  if (lowerHtml.includes('rel="canonical"') || lowerHtml.includes("rel='canonical'")) {
+    add({
+      name: 'Canonical URL Tag',
+      category: 'SEO / Metadata',
+      confidence: 'detected',
+      evidence: '<link rel="canonical"> SEO tag present in document head',
+    });
+  }
+  if (lowerHtml.includes('fetchpriority=')) {
+    add({
+      name: 'Priority Hints',
+      category: 'Performance',
+      confidence: 'detected',
+      evidence: 'Resource fetchpriority attribute detected on media or script tags',
+    });
+  }
+
   return Array.from(found.values());
+}
+
+const STATIC_PREFIX_EXCLUSIONS = new Set([
+  'api',
+  'out',
+  '_next',
+  'favicon.ico',
+  'robots.txt',
+  'sitemap.xml',
+  'manifest.json',
+  'apple-touch-icon.png',
+]);
+
+export function reconstructTargetUrlFromSegments(
+  segments: string[],
+  query: Record<string, string | string[] | undefined> = {},
+): string | null {
+  if (!segments || segments.length === 0) return null;
+
+  const first = decodeURIComponent(segments[0]).trim().toLowerCase();
+  if (!first || STATIC_PREFIX_EXCLUSIONS.has(first)) {
+    return null;
+  }
+
+  // Avoid catching direct static asset files like /logo.png when not a domain/URL
+  if (
+    segments.length === 1 &&
+    /\.(ico|png|jpg|jpeg|svg|webp|css|js|map|woff2?|ttf|txt)$/i.test(first)
+  ) {
+    return null;
+  }
+
+  let targetUrl = segments
+    .map((segment) => {
+      try {
+        return decodeURIComponent(segment);
+      } catch {
+        return segment;
+      }
+    })
+    .join('/');
+
+  // Fix browser collapsing "https://" into "https:/"
+  targetUrl = targetUrl.replace(/^(https?):\/([^/])/i, '$1://$2');
+
+  if (!/^https?:\/\//i.test(targetUrl)) {
+    targetUrl = `https://${targetUrl}`;
+  }
+
+  const queryEntries = Object.entries(query);
+  if (queryEntries.length > 0) {
+    const search = new URLSearchParams();
+    for (const [key, val] of queryEntries) {
+      if (typeof val === 'string') search.append(key, val);
+      else if (Array.isArray(val)) val.forEach((v) => search.append(key, v));
+    }
+    const qs = search.toString();
+    if (qs) {
+      targetUrl += (targetUrl.includes('?') ? '&' : '?') + qs;
+    }
+  }
+
+  return targetUrl;
 }

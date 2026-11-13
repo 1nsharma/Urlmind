@@ -375,9 +375,14 @@ CRITICAL EPISTEMIC RULES:
   const validTechCats = new Set<TechItem['category']>([
     'Framework',
     'Styling',
+    'UI & Icons',
+    'Bundler & Build',
+    'Graphics / Visualization',
     'API / Protocol',
     'Infrastructure',
     'Analytics',
+    'SEO / Metadata',
+    'Performance',
     'Auth / Security',
     'Language / Runtime',
   ]);

@@ -1,12 +1,13 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import CompareView from '@/components/CompareView';
 import IntelligenceWorkspace from '@/components/IntelligenceWorkspace';
 import PipelineView from '@/components/PipelineView';
 import SavedMapsView from '@/components/SavedMapsView';
 import TopNav, { type AppSection } from '@/components/TopNav';
 import UrlAnalyzerLanding from '@/components/UrlAnalyzerLanding';
+import { normalizeAndValidateUrl } from '@/lib/classifier';
 import { SHOWCASE_PRESETS } from '@/lib/showcasePresets';
 import type { UrlIntelligenceReport, WorkspaceView } from '@/lib/types';
 
@@ -23,64 +24,7 @@ export default function HomePage() {
   const [pipelineStage, setPipelineStage] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isDark, setIsDark] = useState(false);
-
-  // Hydrate persisted history, theme, and optional ?autostart=1
-  useEffect(() => {
-    queueMicrotask(() => {
-      try {
-        const savedTheme = localStorage.getItem(STORAGE_THEME_KEY);
-        if (savedTheme === 'dark') {
-          setIsDark(true);
-          document.documentElement.classList.add('dark');
-        }
-
-        const rawHistory = localStorage.getItem(STORAGE_HISTORY_KEY);
-        if (rawHistory) {
-          const parsed = JSON.parse(rawHistory) as UrlIntelligenceReport[];
-          if (Array.isArray(parsed)) {
-            setHistory(parsed);
-          }
-        }
-      } catch {
-        // Ignore storage access failures
-      }
-
-      if (typeof window !== 'undefined') {
-        const params = new URLSearchParams(window.location.search);
-        if (params.get('autostart') === '1') {
-          const demo = SHOWCASE_PRESETS['https://github.com/vercel/ai'];
-          if (demo) {
-            setActiveReport(demo);
-            setActiveView('map');
-            setSection('analyzer');
-          }
-        }
-      }
-    });
-  }, []);
-
-  const persistHistory = useCallback((items: UrlIntelligenceReport[]) => {
-    setHistory(items);
-    try {
-      localStorage.setItem(STORAGE_HISTORY_KEY, JSON.stringify(items.slice(0, 12)));
-    } catch {
-      // Ignore storage quota errors
-    }
-  }, []);
-
-  const handleToggleTheme = () => {
-    setIsDark((prev) => {
-      const next = !prev;
-      if (next) {
-        document.documentElement.classList.add('dark');
-        localStorage.setItem(STORAGE_THEME_KEY, 'dark');
-      } else {
-        document.documentElement.classList.remove('dark');
-        localStorage.setItem(STORAGE_THEME_KEY, 'light');
-      }
-      return next;
-    });
-  };
+  const didHandleInitialQueryRef = useRef(false);
 
   const upsertReport = useCallback(
     (report: UrlIntelligenceReport) => {
@@ -105,67 +49,143 @@ export default function HomePage() {
     [],
   );
 
-  const handleAnalyze = async (
-    url: string,
-    options: { usePreset?: boolean; forceRefresh?: boolean } = {},
-  ) => {
-    setErrorMessage(null);
-    setIsLoading(true);
-    setPipelineStage(1);
+  const handleAnalyze = useCallback(
+    async (
+      url: string,
+      options: { usePreset?: boolean; forceRefresh?: boolean } = {},
+    ) => {
+      setErrorMessage(null);
+      setIsLoading(true);
+      setPipelineStage(1);
 
-    // Instant deterministic showcase load when clicking a curated preset card (unless forceRefresh is requested)
-    if (options.usePreset && !options.forceRefresh) {
-      const clean = url.trim().replace(/\/+$/, '').toLowerCase();
-      const matched = Object.entries(SHOWCASE_PRESETS).find(
-        ([k]) => k.replace(/\/+$/, '').toLowerCase() === clean,
-      )?.[1];
-      if (matched) {
-        setPipelineStage(2);
-        setTimeout(() => {
-          setPipelineStage(3);
-          upsertReport(matched);
-          setIsLoading(false);
-          setPipelineStage(0);
-        }, 220);
-        return;
+      // Instant deterministic showcase load when clicking a curated preset card (unless forceRefresh is requested)
+      if (options.usePreset && !options.forceRefresh) {
+        const clean = url.trim().replace(/\/+$/, '').toLowerCase();
+        const matched = Object.entries(SHOWCASE_PRESETS).find(
+          ([k]) => k.replace(/\/+$/, '').toLowerCase() === clean,
+        )?.[1];
+        if (matched) {
+          setPipelineStage(2);
+          setTimeout(() => {
+            setPipelineStage(3);
+            upsertReport(matched);
+            setIsLoading(false);
+            setPipelineStage(0);
+          }, 220);
+          return;
+        }
       }
-    }
 
-    const stageTimer1 = setTimeout(() => setPipelineStage(2), 600);
-    const stageTimer2 = setTimeout(() => setPipelineStage(3), 1800);
+      const stageTimer1 = setTimeout(() => setPipelineStage(2), 600);
+      const stageTimer2 = setTimeout(() => setPipelineStage(3), 1800);
 
+      try {
+        const res = await fetch('/api/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            url,
+            usePreset: Boolean(options.usePreset),
+            forceRefresh: Boolean(options.forceRefresh),
+          }),
+        });
+
+        const data = (await res.json()) as {
+          report?: UrlIntelligenceReport;
+          error?: string;
+        };
+        if (!res.ok || !data.report) {
+          throw new Error(data.error || 'Failed to analyze URL.');
+        }
+
+        upsertReport(data.report);
+      } catch (err) {
+        setErrorMessage(
+          err instanceof Error
+            ? err.message
+            : 'Could not analyze that URL. Please check the address and try again.',
+        );
+      } finally {
+        clearTimeout(stageTimer1);
+        clearTimeout(stageTimer2);
+        setIsLoading(false);
+        setPipelineStage(0);
+      }
+    },
+    [upsertReport],
+  );
+
+  // Hydrate persisted history, theme, ?autostart=1, and /?url=... from URL prefix redirects
+  useEffect(() => {
+    queueMicrotask(() => {
+      try {
+        const savedTheme = localStorage.getItem(STORAGE_THEME_KEY);
+        if (savedTheme === 'dark') {
+          setIsDark(true);
+          document.documentElement.classList.add('dark');
+        }
+
+        const rawHistory = localStorage.getItem(STORAGE_HISTORY_KEY);
+        if (rawHistory) {
+          const parsed = JSON.parse(rawHistory) as UrlIntelligenceReport[];
+          if (Array.isArray(parsed)) {
+            setHistory(parsed);
+          }
+        }
+      } catch {
+        // Ignore storage access failures
+      }
+
+      if (typeof window !== 'undefined' && !didHandleInitialQueryRef.current) {
+        didHandleInitialQueryRef.current = true;
+        const params = new URLSearchParams(window.location.search);
+        const queryUrl = params.get('url');
+
+        if (queryUrl) {
+          const check = normalizeAndValidateUrl(queryUrl);
+          if (check.valid && check.normalizedUrl) {
+            void handleAnalyze(check.normalizedUrl, { usePreset: false });
+          } else {
+            setErrorMessage(
+              check.error || 'Invalid URL provided in query parameter.',
+            );
+          }
+          return;
+        }
+
+        if (params.get('autostart') === '1') {
+          const demo = SHOWCASE_PRESETS['https://github.com/vercel/ai'];
+          if (demo) {
+            setActiveReport(demo);
+            setActiveView('map');
+            setSection('analyzer');
+          }
+        }
+      }
+    });
+  }, [handleAnalyze]);
+
+  const persistHistory = useCallback((items: UrlIntelligenceReport[]) => {
+    setHistory(items);
     try {
-      const res = await fetch('/api/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          url,
-          usePreset: Boolean(options.usePreset),
-          forceRefresh: Boolean(options.forceRefresh),
-        }),
-      });
-
-      const data = (await res.json()) as {
-        report?: UrlIntelligenceReport;
-        error?: string;
-      };
-      if (!res.ok || !data.report) {
-        throw new Error(data.error || 'Failed to analyze URL.');
-      }
-
-      upsertReport(data.report);
-    } catch (err) {
-      setErrorMessage(
-        err instanceof Error
-          ? err.message
-          : 'Could not analyze that URL. Please check the address and try again.',
-      );
-    } finally {
-      clearTimeout(stageTimer1);
-      clearTimeout(stageTimer2);
-      setIsLoading(false);
-      setPipelineStage(0);
+      localStorage.setItem(STORAGE_HISTORY_KEY, JSON.stringify(items.slice(0, 12)));
+    } catch {
+      // Ignore storage quota errors
     }
+  }, []);
+
+  const handleToggleTheme = () => {
+    setIsDark((prev) => {
+      const next = !prev;
+      if (next) {
+        document.documentElement.classList.add('dark');
+        localStorage.setItem(STORAGE_THEME_KEY, 'dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+        localStorage.setItem(STORAGE_THEME_KEY, 'light');
+      }
+      return next;
+    });
   };
 
   const handlePrimaryHeaderAction = () => {
@@ -238,6 +258,7 @@ export default function HomePage() {
           ) : (
             <UrlAnalyzerLanding
               onAnalyze={handleAnalyze}
+              onImportCsv={(report) => upsertReport(report)}
               isLoading={isLoading}
               pipelineStage={pipelineStage}
               errorMessage={errorMessage}
@@ -255,6 +276,9 @@ export default function HomePage() {
               setActiveReport(rep);
               setActiveView('map');
               setSection('analyzer');
+            }}
+            onOpenPreset={(presetUrl) => {
+              void handleAnalyze(presetUrl, { usePreset: true });
             }}
             onDeleteReport={(id) => {
               const updated = history.filter((item) => item.id !== id);

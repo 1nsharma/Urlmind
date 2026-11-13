@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { detectSocialPlatform } from './adapters/social';
+import { resolveCampaignDestination } from './campaigns';
 import {
   clearCachedReport,
   getCachedReport,
@@ -14,7 +15,13 @@ import {
   classifyUrl,
   detectHtmlTechnologies,
   normalizeAndValidateUrl,
+  reconstructTargetUrlFromSegments,
 } from './classifier';
+import {
+  buildReportFromTechCsv,
+  parseTechCsv,
+  SAMPLE_WAPPALYZER_CSV,
+} from './csvImporter';
 import {
   computeComparisonDiff,
   computeLayeredGraphPositions,
@@ -34,6 +41,20 @@ test('normalizeAndValidateUrl rejects empty, invalid, and local URLs', () => {
   assert.equal(validBare.valid, true);
   assert.equal(validBare.normalizedUrl, 'https://stripe.com/');
   assert.equal(validBare.domain, 'stripe.com');
+});
+
+test('reconstructTargetUrlFromSegments restores collapsed schemes, preserves queries, and skips static files', () => {
+  assert.equal(
+    reconstructTargetUrlFromSegments(['https:', 'github.com', 'vercel', 'ai']),
+    'https://github.com/vercel/ai',
+  );
+  assert.equal(
+    reconstructTargetUrlFromSegments(['youtube.com', 'watch'], { v: 'M7lc1UVf-VE' }),
+    'https://youtube.com/watch?v=M7lc1UVf-VE',
+  );
+  assert.equal(reconstructTargetUrlFromSegments(['favicon.ico']), null);
+  assert.equal(reconstructTargetUrlFromSegments(['api', 'analyze']), null);
+  assert.equal(reconstructTargetUrlFromSegments(['out', 'coffee']), null);
 });
 
 test('classifyUrl categorizes websites, GitHub repos, APIs, docs, articles, media, and social URLs', () => {
@@ -61,15 +82,21 @@ test('detectSocialPlatform accurately identifies YouTube, Twitter/X, Instagram, 
   assert.equal(detectSocialPlatform('https://stripe.com'), null);
 });
 
-test('detectHtmlTechnologies extracts detected signatures with evidence', () => {
+test('detectHtmlTechnologies extracts detected signatures including Wappalyzer-grade UI, analytics, and metadata signals', () => {
   const sampleHtml = `
     <html>
       <head>
-        <script src="/_next/static/chunks/main.js"></script>
+        <meta property="og:title" content="GitDiagram" />
+        <link rel="canonical" href="https://gitdiagram.com/" />
+        <script src="/_next/static/chunks/main.js" fetchpriority="high"></script>
         <script src="https://js.stripe.com/v3/"></script>
+        <script src="https://us.i.posthog.com/static/array.js"></script>
         <script type="application/ld+json">{}</script>
       </head>
-      <body class="flex bg-slate-50 px-4"></body>
+      <body class="flex bg-slate-50 px-4" data-radix-portal="">
+        <svg class="lucide lucide-network"></svg>
+        <div class="mermaid" data-processed="true"></div>
+      </body>
     </html>
   `;
   const techs = detectHtmlTechnologies(sampleHtml, {
@@ -83,7 +110,29 @@ test('detectHtmlTechnologies extracts detected signatures with evidence', () => 
   assert.ok(names.includes('Stripe.js'));
   assert.ok(names.includes('Tailwind CSS'));
   assert.ok(names.includes('Schema.org JSON-LD'));
+  assert.ok(names.includes('Radix UI'));
+  assert.ok(names.includes('Lucide Icons'));
+  assert.ok(names.includes('Mermaid.js'));
+  assert.ok(names.includes('PostHog'));
+  assert.ok(names.includes('Open Graph Protocol'));
+  assert.ok(names.includes('Canonical URL Tag'));
+  assert.ok(names.includes('Priority Hints'));
   assert.ok(techs.every((t) => t.confidence === 'detected'));
+});
+
+test('parseTechCsv and buildReportFromTechCsv synthesize layered architecture reports from Wappalyzer CSVs', () => {
+  const parsed = parseTechCsv(SAMPLE_WAPPALYZER_CSV);
+  assert.equal(parsed.detectedUrl, 'https://gitdiagram.com');
+  assert.equal(parsed.rows.length, 11);
+
+  const report = buildReportFromTechCsv(SAMPLE_WAPPALYZER_CSV);
+  assert.equal(report.domain, 'gitdiagram.com');
+  assert.equal(report.sourceMethod, 'csv-import');
+  assert.equal(report.techStack.length, 11);
+  assert.ok(report.nodes.some((n) => n.layer === 'entry'));
+  assert.ok(report.nodes.some((n) => n.layer === 'frontend'));
+  assert.ok(report.nodes.some((n) => n.layer === 'external'));
+  assert.ok(report.nodes.some((n) => n.confidence === 'inferred'));
 });
 
 test('computeLayeredGraphPositions places nodes across distinct non-overlapping columns', () => {
@@ -144,4 +193,38 @@ test('computeComparisonDiff calculates shared and unique technologies cleanly', 
   assert.equal(diff.nodeCountB, reportB.nodes.length);
   assert.ok(diff.uniqueToA.includes('Stripe.js v3'));
   assert.ok(diff.uniqueToB.includes('Next.js (Dogfooded)'));
+});
+
+test('resolveCampaignDestination resolves env URLs across short and full slugs and falls back to null when unconfigured', () => {
+  const mockEnv = {
+    URLMIND_CAMPAIGN_COFFEE: 'https://buymeacoffee.com/1nsharma',
+    URLMIND_CAMPAIGN_AGENTS: 'https://agents.example.com',
+    URLMIND_CAMPAIGN_SUPERINTELLIGENCE: 'https://super.example.com',
+    URLMIND_CAMPAIGN_STUDY: 'javascript:alert(1)',
+    URLMIND_CAMPAIGN_SPONSOR: '',
+  };
+
+  assert.equal(
+    resolveCampaignDestination('coffee', mockEnv).destination,
+    'https://buymeacoffee.com/1nsharma',
+  );
+  assert.equal(
+    resolveCampaignDestination('agents', mockEnv).destination,
+    'https://agents.example.com',
+  );
+  assert.equal(
+    resolveCampaignDestination('agents-world', mockEnv).destination,
+    'https://agents.example.com',
+  );
+  assert.equal(
+    resolveCampaignDestination('superintelligence', mockEnv).destination,
+    'https://super.example.com',
+  );
+  assert.equal(
+    resolveCampaignDestination('superintelligence-house', mockEnv).destination,
+    'https://super.example.com',
+  );
+  assert.equal(resolveCampaignDestination('study', mockEnv).destination, null);
+  assert.equal(resolveCampaignDestination('sponsor', mockEnv).destination, null);
+  assert.equal(resolveCampaignDestination('unknown', mockEnv).destination, null);
 });

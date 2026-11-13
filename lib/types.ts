@@ -90,9 +90,14 @@ export interface TechItem {
   category:
     | 'Framework'
     | 'Styling'
+    | 'UI & Icons'
+    | 'Bundler & Build'
+    | 'Graphics / Visualization'
     | 'API / Protocol'
     | 'Infrastructure'
     | 'Analytics'
+    | 'SEO / Metadata'
+    | 'Performance'
     | 'Auth / Security'
     | 'Language / Runtime';
   confidence: EvidenceConfidence;
@@ -128,7 +133,12 @@ export interface UrlIntelligenceReport {
   summary: string;
   executiveOverview: string;
   analyzedAt: string;
-  sourceMethod: 'live-crawl' | 'preset-showcase' | 'url-context' | 'oembed-social';
+  sourceMethod:
+    | 'live-crawl'
+    | 'preset-showcase'
+    | 'url-context'
+    | 'oembed-social'
+    | 'csv-import';
   cacheStatus?: 'hit' | 'miss' | 'bypassed';
   cachedAt?: string;
   socialMetadata?: SocialMetadata;

@@ -31,6 +31,7 @@ import AskUrlChat from './AskUrlChat';
 import ExplainerPlayer from './ExplainerPlayer';
 import ExportView from './ExportView';
 import SitemapView from './SitemapView';
+import SponsorBanner from './SponsorBanner';
 import TechStackView from './TechStackView';
 import WorkflowView from './WorkflowView';
 
@@ -120,13 +121,15 @@ export default function IntelligenceWorkspace({
   ).length;
 
   const cacheLabel =
-    report.cacheStatus === 'hit'
-      ? 'Cached Report'
-      : report.cacheStatus === 'bypassed'
-        ? 'Live Analysis (Cache Bypassed)'
-        : report.sourceMethod === 'preset-showcase'
-          ? 'Reference Preset'
-          : 'Live Analysis';
+    report.sourceMethod === 'csv-import'
+      ? 'CSV Tech Import'
+      : report.cacheStatus === 'hit'
+        ? 'Cached Report'
+        : report.cacheStatus === 'bypassed'
+          ? 'Live Analysis (Cache Bypassed)'
+          : report.sourceMethod === 'preset-showcase'
+            ? 'Reference Preset'
+            : 'Live Analysis';
 
   return (
     <div className="max-w-[1440px] mx-auto px-4 sm:px-6 py-6">
@@ -383,6 +386,8 @@ export default function IntelligenceWorkspace({
               report={report}
               onAskAboutNode={handleAskAboutNode}
               isDark={isDark}
+              onRegenerate={onRefreshLive}
+              isRegenerating={isRefreshing}
             />
           )}
           {activeView === 'sitemap' && <SitemapView report={report} />}
@@ -397,6 +402,8 @@ export default function IntelligenceWorkspace({
             />
           )}
           {activeView === 'export' && <ExportView report={report} />}
+
+          <SponsorBanner />
         </main>
       </div>
     </div>

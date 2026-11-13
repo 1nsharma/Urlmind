@@ -33,6 +33,8 @@ interface ArchitectureMapProps {
   report: UrlIntelligenceReport;
   onAskAboutNode: (node: IntelligenceNode) => void;
   isDark?: boolean;
+  onRegenerate?: () => void;
+  isRegenerating?: boolean;
 }
 
 type CustomNodeData = {
@@ -108,6 +110,8 @@ export default function ArchitectureMap({
   report,
   onAskAboutNode,
   isDark = false,
+  onRegenerate,
+  isRegenerating = false,
 }: ArchitectureMapProps) {
   const [mapMode, setMapMode] = useState<'flow' | 'mermaid'>('flow');
   const [layerFilter, setLayerFilter] = useState<NodeLayer | 'all'>('all');
@@ -331,7 +335,12 @@ export default function ArchitectureMap({
       </div>
 
       {mapMode === 'mermaid' ? (
-        <MermaidDiagram report={report} isDark={isDark} />
+        <MermaidDiagram
+          report={report}
+          isDark={isDark}
+          onRegenerate={onRegenerate}
+          isRegenerating={isRegenerating}
+        />
       ) : (
       /* Main Split: Interactive Canvas + Node Inspector */
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 items-stretch">
