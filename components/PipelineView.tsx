@@ -80,6 +80,11 @@ const ENV_VARIABLES = [
     purpose: 'Meta App token enabling authenticated Instagram Graph oEmbed previews.',
   },
   {
+    name: 'JINA_API_KEY',
+    requirement: 'Optional',
+    purpose: 'Optional Jina Reader Bearer token for higher-rate r.jina.ai SPA & anti-bot markdown fallback.',
+  },
+  {
     name: 'CACHE_TTL_HOURS',
     requirement: 'Optional',
     purpose: 'Server disk & memory cache lifetime in hours (defaults to 24).',

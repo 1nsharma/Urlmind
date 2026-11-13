@@ -49,7 +49,7 @@ const PIPELINE_STEPS = [
     step: '02',
     title: 'Intelligent Crawler',
     detail:
-      'Checks server cache, fetches DOM/GitHub/OpenAPI, or queries public oEmbed APIs.',
+      'Checks server cache, fetches DOM/GitHub/OpenAPI, falls back to Jina Reader for SPAs, or queries public oEmbed.',
   },
   {
     step: '03',
@@ -365,6 +365,17 @@ export default function UrlAnalyzerLanding({
           </form>
         )}
 
+        {inputMode === 'url' && (
+          <p className="mt-2.5 text-xs text-slate-500 dark:text-slate-400">
+            <span className="font-medium text-slate-700 dark:text-slate-300">Tip:</span>{' '}
+            Prepend this domain before any public URL in your address bar (e.g.{' '}
+            <code className="font-mono text-slate-700 dark:text-slate-300">
+              /github.com/vercel/ai
+            </code>
+            ) for instant diagrams.
+          </p>
+        )}
+
         {displayError && (
           <div
             role="alert"
@@ -475,11 +486,11 @@ export default function UrlAnalyzerLanding({
         </div>
         <div>
           <h3 className="font-display text-sm font-semibold text-slate-900 dark:text-white">
-            02. Real Crawl, oEmbed + Server Cache
+            02. Real Crawl, Jina Fallback & Server Cache
           </h3>
           <p className="mt-1.5 text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
             Inspects live HTML DOM routes, GitHub trees, OpenAPI JSON, and public
-            oEmbed feeds with persistent server caching for instant repeat lookups.
+            oEmbed feeds, falling back to Jina Reader (<code className="font-mono text-xs">r.jina.ai</code>) for client-rendered SPAs.
           </p>
         </div>
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">

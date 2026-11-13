@@ -61,6 +61,134 @@ async function fetchWithTimeout(
   }
 }
 
+export interface ParsedJinaMarkdown {
+  title: string;
+  headings: string[];
+  internalLinks: Array<{ text: string; href: string }>;
+  externalLinks: Array<{ text: string; href: string }>;
+  textExcerpt: string;
+}
+
+export function parseJinaMarkdown(
+  markdown: string,
+  normalizedUrl: string,
+  domain: string,
+): ParsedJinaMarkdown {
+  const titleMatch = markdown.match(/^Title:\s*(.+)$/im);
+  const h1Match = markdown.match(/^#\s+(.+)$/m);
+  const title =
+    (titleMatch?.[1] || h1Match?.[1] || domain)
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+      .replace(/[*_`]/g, '')
+      .trim() || domain;
+
+  const headings: string[] = [];
+  const headingRegex = /^#{1,3}\s+(.+)$/gm;
+  let headingMatch: RegExpExecArray | null;
+  while ((headingMatch = headingRegex.exec(markdown)) !== null) {
+    const cleanHeading = headingMatch[1]
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+      .replace(/[*_`]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (cleanHeading && headings.length < 30 && !headings.includes(cleanHeading)) {
+      headings.push(cleanHeading);
+    }
+  }
+
+  const internalLinks: Array<{ text: string; href: string }> = [];
+  const externalLinks: Array<{ text: string; href: string }> = [];
+  const seenHrefs = new Set<string>();
+  let originHost = domain.replace(/^www\./, '');
+  try {
+    originHost = new URL(normalizedUrl).hostname.replace(/^www\./, '');
+  } catch {
+    // Keep normalized domain fallback
+  }
+
+  const linkRegex = /(?<!!)\[([^\]]+)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
+  let linkMatch: RegExpExecArray | null;
+  while ((linkMatch = linkRegex.exec(markdown)) !== null) {
+    const linkText = linkMatch[1].replace(/\s+/g, ' ').trim().slice(0, 60);
+    const rawHref = linkMatch[2].trim();
+    if (
+      !rawHref ||
+      rawHref.startsWith('#') ||
+      rawHref.startsWith('javascript:') ||
+      rawHref.startsWith('mailto:')
+    ) {
+      continue;
+    }
+
+    try {
+      const resolved = new URL(rawHref, normalizedUrl);
+      if (resolved.protocol !== 'http:' && resolved.protocol !== 'https:') {
+        continue;
+      }
+      const key = resolved.pathname + resolved.search;
+      const linkHost = resolved.hostname.replace(/^www\./, '');
+      if (linkHost === originHost) {
+        if (!seenHrefs.has(key) && internalLinks.length < 50) {
+          seenHrefs.add(key);
+          internalLinks.push({
+            text: linkText || resolved.pathname,
+            href: resolved.pathname,
+          });
+        }
+      } else if (!seenHrefs.has(resolved.origin) && externalLinks.length < 25) {
+        seenHrefs.add(resolved.origin);
+        externalLinks.push({
+          text: linkText || linkHost,
+          href: resolved.origin,
+        });
+      }
+    } catch {
+      // Ignore malformed hrefs
+    }
+  }
+
+  const contentMarker = markdown.match(/Markdown Content:\s*\n([\s\S]*)$/i);
+  const bodyContent = (contentMarker ? contentMarker[1] : markdown)
+    .replace(/^(Title|URL Source|Published Time):.*$/gim, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+    .slice(0, 10000);
+
+  return {
+    title,
+    headings,
+    internalLinks,
+    externalLinks,
+    textExcerpt: bodyContent,
+  };
+}
+
+async function fetchViaJinaReader(targetUrl: string): Promise<string | null> {
+  try {
+    const jinaUrl = `https://r.jina.ai/${targetUrl}`;
+    const headers: Record<string, string> = {
+      Accept: 'text/plain',
+      'X-Return-Format': 'markdown',
+      'User-Agent': 'URLMIND-Crawler/1.0 (+https://urlmind.app)',
+    };
+    const apiKey = process.env.JINA_API_KEY?.trim();
+    if (apiKey) {
+      headers.Authorization = `Bearer ${apiKey}`;
+    }
+
+    const res = await fetch(jinaUrl, {
+      headers,
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) return null;
+
+    const md = await res.text();
+    return md.trim().length > 100 ? md.slice(0, 15000) : null;
+  } catch {
+    return null;
+  }
+}
+
 async function crawlGitHubRepo(
   url: string,
   domain: string,
@@ -261,6 +389,34 @@ export async function crawlPublicUrl(
     });
 
     if (!res.ok) {
+      const headerTech = detectHtmlTechnologies('', headersObj);
+      const jinaMd = await fetchViaJinaReader(normalizedUrl);
+      if (jinaMd) {
+        const parsedMd = parseJinaMarkdown(jinaMd, normalizedUrl, domain);
+        return {
+          url: normalizedUrl,
+          domain,
+          category,
+          crawlSuccess: true,
+          pageTitle: parsedMd.title,
+          metaDescription: '',
+          headings: parsedMd.headings,
+          internalLinks: parsedMd.internalLinks,
+          externalLinks: parsedMd.externalLinks,
+          scripts: [],
+          detectedTech: headerTech,
+          textExcerpt: parsedMd.textExcerpt,
+          metrics: {
+            httpStatus: res.status,
+            internalLinksCount: parsedMd.internalLinks.length,
+            externalLinksCount: parsedMd.externalLinks.length,
+            headingsCount: parsedMd.headings.length,
+            scriptsCount: 0,
+            inspectedLabel: `Jina Reader markdown fallback after HTTP ${res.status} (${parsedMd.internalLinks.length} internal routes, ${parsedMd.headings.length} headings)`,
+          },
+        };
+      }
+
       return {
         url: normalizedUrl,
         domain,
@@ -273,7 +429,7 @@ export async function crawlPublicUrl(
         internalLinks: [],
         externalLinks: [],
         scripts: [],
-        detectedTech: detectHtmlTechnologies('', headersObj),
+        detectedTech: headerTech,
         textExcerpt: '',
         metrics: {
           httpStatus: res.status,
@@ -428,6 +584,65 @@ export async function crawlPublicUrl(
       .trim()
       .slice(0, 10000);
 
+    // Fallback to Jina Reader for client-rendered SPAs with thin initial HTML
+    if (cleanText.length < 180) {
+      const jinaMd = await fetchViaJinaReader(normalizedUrl);
+      if (jinaMd) {
+        const parsedMd = parseJinaMarkdown(jinaMd, normalizedUrl, domain);
+        const mergedHeadings = [...headings];
+        for (const h of parsedMd.headings) {
+          if (mergedHeadings.length >= 30) break;
+          if (!mergedHeadings.includes(h)) mergedHeadings.push(h);
+        }
+
+        const mergedInternal = [...internalLinks];
+        const seenInternal = new Set(internalLinks.map((l) => l.href));
+        for (const link of parsedMd.internalLinks) {
+          if (mergedInternal.length >= 50) break;
+          if (!seenInternal.has(link.href)) {
+            seenInternal.add(link.href);
+            mergedInternal.push(link);
+          }
+        }
+
+        const mergedExternal = [...externalLinks];
+        const seenExternal = new Set(externalLinks.map((l) => l.href));
+        for (const link of parsedMd.externalLinks) {
+          if (mergedExternal.length >= 25) break;
+          if (!seenExternal.has(link.href)) {
+            seenExternal.add(link.href);
+            mergedExternal.push(link);
+          }
+        }
+
+        return {
+          url: normalizedUrl,
+          domain,
+          category,
+          crawlSuccess: true,
+          pageTitle: pageTitle !== domain ? pageTitle : parsedMd.title,
+          metaDescription,
+          headings: mergedHeadings,
+          internalLinks: mergedInternal,
+          externalLinks: mergedExternal,
+          scripts,
+          detectedTech,
+          textExcerpt:
+            parsedMd.textExcerpt.length > cleanText.length
+              ? parsedMd.textExcerpt
+              : cleanText,
+          metrics: {
+            httpStatus: res.status,
+            internalLinksCount: mergedInternal.length,
+            externalLinksCount: mergedExternal.length,
+            headingsCount: mergedHeadings.length,
+            scriptsCount: scripts.length,
+            inspectedLabel: `HTML DOM + Jina Reader SPA fallback (${mergedInternal.length} internal routes, ${scripts.length} scripts)`,
+          },
+        };
+      }
+    }
+
     return {
       url: normalizedUrl,
       domain,
@@ -451,6 +666,32 @@ export async function crawlPublicUrl(
       },
     };
   } catch (err) {
+    const jinaMd = await fetchViaJinaReader(normalizedUrl);
+    if (jinaMd) {
+      const parsedMd = parseJinaMarkdown(jinaMd, normalizedUrl, domain);
+      return {
+        url: normalizedUrl,
+        domain,
+        category,
+        crawlSuccess: true,
+        pageTitle: parsedMd.title,
+        metaDescription: '',
+        headings: parsedMd.headings,
+        internalLinks: parsedMd.internalLinks,
+        externalLinks: parsedMd.externalLinks,
+        scripts: [],
+        detectedTech: [],
+        textExcerpt: parsedMd.textExcerpt,
+        metrics: {
+          internalLinksCount: parsedMd.internalLinks.length,
+          externalLinksCount: parsedMd.externalLinks.length,
+          headingsCount: parsedMd.headings.length,
+          scriptsCount: 0,
+          inspectedLabel: `Jina Reader markdown fallback (${parsedMd.internalLinks.length} internal routes, ${parsedMd.headings.length} headings)`,
+        },
+      };
+    }
+
     return {
       url: normalizedUrl,
       domain,

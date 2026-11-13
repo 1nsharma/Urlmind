@@ -22,6 +22,7 @@ import {
   parseTechCsv,
   SAMPLE_WAPPALYZER_CSV,
 } from './csvImporter';
+import { parseJinaMarkdown } from './crawler';
 import {
   computeComparisonDiff,
   computeLayeredGraphPositions,
@@ -227,4 +228,36 @@ test('resolveCampaignDestination resolves env URLs across short and full slugs a
   assert.equal(resolveCampaignDestination('study', mockEnv).destination, null);
   assert.equal(resolveCampaignDestination('sponsor', mockEnv).destination, null);
   assert.equal(resolveCampaignDestination('unknown', mockEnv).destination, null);
+});
+
+test('parseJinaMarkdown extracts title, headings, internal/external links, and clean excerpt', () => {
+  const sampleMarkdown = `Title: Acme Docs Portal
+URL Source: https://acme.dev/docs
+
+Markdown Content:
+# Welcome to Acme Docs
+Explore our [API Reference](/docs/api) or read [Pricing](https://acme.dev/pricing).
+Check our [GitHub Repo](https://github.com/acme/sdk) and ![Architecture](https://acme.dev/img.png).
+## Quickstart Guide
+Run \`npm install @acme/sdk\` to get started.
+### Authentication
+Use [OAuth Setup](/docs/oauth#tokens) or [Email Support](mailto:help@acme.dev).`;
+
+  const parsed = parseJinaMarkdown(sampleMarkdown, 'https://acme.dev/docs', 'acme.dev');
+  assert.equal(parsed.title, 'Acme Docs Portal');
+  assert.deepEqual(parsed.headings, [
+    'Welcome to Acme Docs',
+    'Quickstart Guide',
+    'Authentication',
+  ]);
+  assert.deepEqual(parsed.internalLinks, [
+    { text: 'API Reference', href: '/docs/api' },
+    { text: 'Pricing', href: '/pricing' },
+    { text: 'OAuth Setup', href: '/docs/oauth' },
+  ]);
+  assert.deepEqual(parsed.externalLinks, [
+    { text: 'GitHub Repo', href: 'https://github.com' },
+  ]);
+  assert.ok(parsed.textExcerpt.includes('Quickstart Guide'));
+  assert.ok(!parsed.textExcerpt.includes('URL Source:'));
 });
