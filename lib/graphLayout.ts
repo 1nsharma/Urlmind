@@ -86,8 +86,28 @@ function escapeMermaidLabel(raw: string): string {
   return raw.replace(/"/g, "'").replace(/\n/g, ' ');
 }
 
+function resolveNodeHref(
+  node: IntelligenceNode,
+  report: UrlIntelligenceReport,
+): string | null {
+  if (!node.urlOrPath) return null;
+  const raw = node.urlOrPath.trim();
+  if (/^https?:\/\//i.test(raw)) return raw;
+  try {
+    if (report.category === 'github' && report.normalizedUrl.includes('github.com')) {
+      const base = report.normalizedUrl.replace(/\/+$/, '');
+      if (raw === '/') return base;
+      const cleanPath = raw.replace(/^\/+/, '');
+      return `${base}/tree/main/${cleanPath}`;
+    }
+    return new URL(raw, report.normalizedUrl).toString();
+  } catch {
+    return null;
+  }
+}
+
 export function generateMermaidDiagram(report: UrlIntelligenceReport): string {
-  const lines: string[] = ['flowchart LR'];
+  const lines: string[] = ['flowchart TD'];
 
   const layerLabels: Record<NodeLayer, string> = {
     entry: 'Entry & Discovery',
@@ -97,15 +117,23 @@ export function generateMermaidDiagram(report: UrlIntelligenceReport): string {
     external: 'External Integrations',
   };
 
+  const layerClass: Record<NodeLayer, string> = {
+    entry: 'toneEntry',
+    frontend: 'toneFrontend',
+    logic: 'toneLogic',
+    data: 'toneData',
+    external: 'toneExternal',
+  };
+
   for (const layer of LAYER_ORDER) {
     const layerNodes = report.nodes.filter((n) => n.layer === layer);
     if (layerNodes.length === 0) continue;
-    lines.push(`  subgraph ${layer}["${layerLabels[layer]}"]`);
+    lines.push(`  subgraph group_${layer}["${layerLabels[layer]}"]`);
     for (const node of layerNodes) {
       const id = sanitizeMermaidId(node.id);
       const tag = node.confidence === 'detected' ? 'Detected' : 'Inferred';
       lines.push(
-        `    ${id}["${escapeMermaidLabel(node.label)} (${tag})"]`,
+        `    ${id}["${escapeMermaidLabel(node.label)}<br/>[${tag}]"]`,
       );
     }
     lines.push('  end');
@@ -115,7 +143,42 @@ export function generateMermaidDiagram(report: UrlIntelligenceReport): string {
     const src = sanitizeMermaidId(edge.source);
     const tgt = sanitizeMermaidId(edge.target);
     const lbl = escapeMermaidLabel(edge.label);
-    lines.push(`  ${src} -->|${lbl}| ${tgt}`);
+    lines.push(`  ${src} -->|"${lbl}"| ${tgt}`);
+  }
+
+  // Clickable anchors for nodes with verified URLs/paths
+  for (const node of report.nodes) {
+    const href = resolveNodeHref(node, report);
+    if (href) {
+      const id = sanitizeMermaidId(node.id);
+      lines.push(`  click ${id} "${href.replace(/"/g, '%22')}" _blank`);
+    }
+  }
+
+  // Semantic layer tones matching URLMIND palette
+  lines.push(
+    '  classDef toneEntry fill:#e0e7ff,stroke:#4f46e5,stroke-width:1.5px,color:#1e1b4b',
+  );
+  lines.push(
+    '  classDef toneFrontend fill:#dbeafe,stroke:#2563eb,stroke-width:1.5px,color:#172554',
+  );
+  lines.push(
+    '  classDef toneLogic fill:#fef3c7,stroke:#d97706,stroke-width:1.5px,color:#78350f',
+  );
+  lines.push(
+    '  classDef toneData fill:#dcfce7,stroke:#16a34a,stroke-width:1.5px,color:#14532d',
+  );
+  lines.push(
+    '  classDef toneExternal fill:#f1f5f9,stroke:#475569,stroke-width:1.5px,color:#0f172a',
+  );
+
+  for (const layer of LAYER_ORDER) {
+    const ids = report.nodes
+      .filter((n) => n.layer === layer)
+      .map((n) => sanitizeMermaidId(n.id));
+    if (ids.length > 0) {
+      lines.push(`  class ${ids.join(',')} ${layerClass[layer]}`);
+    }
   }
 
   return lines.join('\n');

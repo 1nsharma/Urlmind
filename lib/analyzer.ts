@@ -1,4 +1,5 @@
 import { Type } from '@google/genai';
+import { getCachedReport, setCachedReport } from './cache';
 import { classifyUrl, normalizeAndValidateUrl } from './classifier';
 import { crawlPublicUrl } from './crawler';
 import { getGeminiClient } from './gemini';
@@ -222,7 +223,7 @@ interface GeminiStructuredOutput {
 
 export async function analyzeUrlPipeline(
   rawUrl: string,
-  options: { usePreset?: boolean } = {},
+  options: { usePreset?: boolean; forceRefresh?: boolean } = {},
 ): Promise<UrlIntelligenceReport> {
   const validation = normalizeAndValidateUrl(rawUrl);
   if (!validation.valid || !validation.normalizedUrl || !validation.domain) {
@@ -232,10 +233,22 @@ export async function analyzeUrlPipeline(
   const normalizedUrl = validation.normalizedUrl;
   const domain = validation.domain;
 
-  if (options.usePreset) {
+  if (options.usePreset && !options.forceRefresh) {
     const preset = findShowcasePreset(normalizedUrl);
     if (preset) {
       return preset;
+    }
+  }
+
+  // 1. Check Shared Server-Side Cache unless bypassing
+  if (!options.forceRefresh) {
+    const cached = await getCachedReport<UrlIntelligenceReport>(normalizedUrl);
+    if (cached) {
+      return {
+        ...cached.data,
+        cacheStatus: 'hit',
+        cachedAt: cached.cachedAt,
+      };
     }
   }
 
@@ -244,10 +257,15 @@ export async function analyzeUrlPipeline(
   const ai = getGeminiClient();
 
   let urlContextNotes = '';
-  let sourceMethod: UrlIntelligenceReport['sourceMethod'] = 'live-crawl';
+  let sourceMethod: UrlIntelligenceReport['sourceMethod'] = crawled.socialDetails
+    ? 'oembed-social'
+    : 'live-crawl';
 
-  // If direct HTTP crawl was blocked or returned thin content, supplement via Gemini urlContext
-  if (!crawled.crawlSuccess || crawled.textExcerpt.length < 180) {
+  // If direct HTTP crawl was blocked or returned thin content (excluding restricted social platforms already handled), supplement via Gemini urlContext
+  if (
+    !crawled.socialDetails &&
+    (!crawled.crawlSuccess || crawled.textExcerpt.length < 180)
+  ) {
     try {
       const ctxRes = await ai.models.generateContent({
         model: 'gemini-4-hydrogen',
@@ -285,6 +303,7 @@ export async function analyzeUrlPipeline(
     detectedTech: crawled.detectedTech,
     githubDetails: crawled.githubDetails,
     openApiDetails: crawled.openApiDetails,
+    socialDetails: crawled.socialDetails,
     textExcerpt: crawled.textExcerpt.slice(0, 7500),
     urlContextNotes,
   };
@@ -374,17 +393,22 @@ CRITICAL EPISTEMIC RULES:
     }
   }
 
-  return {
+  const finalReport: UrlIntelligenceReport = {
     id: `report-${Date.now()}`,
     url: rawUrl.trim(),
     normalizedUrl,
     domain,
     title: parsed.title || crawled.pageTitle || domain,
     category,
-    summary: parsed.summary || crawled.metaDescription || `Architecture analysis of ${domain}`,
+    summary:
+      parsed.summary ||
+      crawled.metaDescription ||
+      `Architecture analysis of ${domain}`,
     executiveOverview: parsed.executiveOverview || parsed.summary || '',
     analyzedAt: new Date().toISOString(),
     sourceMethod,
+    cacheStatus: options.forceRefresh ? 'bypassed' : 'miss',
+    socialMetadata: crawled.socialDetails,
     crawlMetrics: crawled.metrics,
     nodes,
     edges,
@@ -406,6 +430,7 @@ CRITICAL EPISTEMIC RULES:
       ),
     })),
     limitationsNote:
+      crawled.socialDetails?.accessNote ||
       parsed.limitationsNote ||
       'Public URL analysis reflects observable HTML, headers, API specs, or public repository files. Private backend infrastructure and databases are labeled as inferred.',
     suggestedQuestions:
@@ -416,5 +441,11 @@ CRITICAL EPISTEMIC RULES:
             `How do users or data flow through ${domain}?`,
             `What are the key technology dependencies identified?`,
           ],
+  };
+
+  const cachedAt = await setCachedReport(normalizedUrl, finalReport);
+  return {
+    ...finalReport,
+    cachedAt,
   };
 }

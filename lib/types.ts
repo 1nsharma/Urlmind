@@ -4,7 +4,23 @@ export type UrlCategory =
   | 'api'
   | 'docs'
   | 'github'
-  | 'article';
+  | 'article'
+  | 'social'
+  | 'media';
+
+export type SocialPlatform = 'youtube' | 'twitter' | 'instagram' | 'linkedin';
+
+export interface SocialMetadata {
+  platform: SocialPlatform;
+  title: string;
+  authorName?: string;
+  authorUrl?: string;
+  thumbnailUrl?: string;
+  embedHtml?: string;
+  description?: string;
+  accessRestricted: boolean;
+  accessNote?: string;
+}
 
 export type EvidenceConfidence = 'detected' | 'inferred';
 
@@ -112,7 +128,10 @@ export interface UrlIntelligenceReport {
   summary: string;
   executiveOverview: string;
   analyzedAt: string;
-  sourceMethod: 'live-crawl' | 'preset-showcase' | 'url-context';
+  sourceMethod: 'live-crawl' | 'preset-showcase' | 'url-context' | 'oembed-social';
+  cacheStatus?: 'hit' | 'miss' | 'bypassed';
+  cachedAt?: string;
+  socialMetadata?: SocialMetadata;
   crawlMetrics: CrawlMetrics;
   nodes: IntelligenceNode[];
   edges: IntelligenceEdge[];

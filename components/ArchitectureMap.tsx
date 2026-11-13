@@ -27,10 +27,12 @@ import type {
   NodeLayer,
   UrlIntelligenceReport,
 } from '@/lib/types';
+import MermaidDiagram from './MermaidDiagram';
 
 interface ArchitectureMapProps {
   report: UrlIntelligenceReport;
   onAskAboutNode: (node: IntelligenceNode) => void;
+  isDark?: boolean;
 }
 
 type CustomNodeData = {
@@ -105,7 +107,9 @@ const nodeTypes = {
 export default function ArchitectureMap({
   report,
   onAskAboutNode,
+  isDark = false,
 }: ArchitectureMapProps) {
+  const [mapMode, setMapMode] = useState<'flow' | 'mermaid'>('flow');
   const [layerFilter, setLayerFilter] = useState<NodeLayer | 'all'>('all');
   const [confidenceFilter, setConfidenceFilter] = useState<
     EvidenceConfidence | 'all'
@@ -228,70 +232,108 @@ export default function ArchitectureMap({
         <div className="flex flex-wrap items-center gap-2">
           <div
             role="group"
-            aria-label="Filter nodes by confidence"
+            aria-label="Diagram renderer mode"
             className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-lg"
           >
-            {(
-              [
-                { id: 'all', label: `All (${report.nodes.length})` },
-                { id: 'detected', label: `Detected (${detectedCount})` },
-                { id: 'inferred', label: `Inferred (${inferredCount})` },
-              ] as const
-            ).map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setConfidenceFilter(tab.id)}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                  confidenceFilter === tab.id
-                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
+            <button
+              type="button"
+              onClick={() => setMapMode('flow')}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                mapMode === 'flow'
+                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              Interactive Graph
+            </button>
+            <button
+              type="button"
+              onClick={() => setMapMode('mermaid')}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                mapMode === 'mermaid'
+                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              Mermaid Diagram
+            </button>
           </div>
 
-          <label htmlFor="map-layer-select" className="sr-only">
-            Filter by architecture layer
-          </label>
-          <select
-            id="map-layer-select"
-            value={layerFilter}
-            onChange={(e) =>
-              setLayerFilter(e.target.value as NodeLayer | 'all')
-            }
-            className="px-3 py-1.5 text-xs font-medium bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-600"
-          >
-            {Object.entries(LAYER_LABELS).map(([val, lbl]) => (
-              <option key={val} value={val}>
-                {lbl}
-              </option>
-            ))}
-          </select>
+          {mapMode === 'flow' && (
+            <>
+              <div
+                role="group"
+                aria-label="Filter nodes by confidence"
+                className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-lg"
+              >
+                {(
+                  [
+                    { id: 'all', label: `All (${report.nodes.length})` },
+                    { id: 'detected', label: `Detected (${detectedCount})` },
+                    { id: 'inferred', label: `Inferred (${inferredCount})` },
+                  ] as const
+                ).map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setConfidenceFilter(tab.id)}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                      confidenceFilter === tab.id
+                        ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              <label htmlFor="map-layer-select" className="sr-only">
+                Filter by architecture layer
+              </label>
+              <select
+                id="map-layer-select"
+                value={layerFilter}
+                onChange={(e) =>
+                  setLayerFilter(e.target.value as NodeLayer | 'all')
+                }
+                className="px-3 py-1.5 text-xs font-medium bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-600"
+              >
+                {Object.entries(LAYER_LABELS).map(([val, lbl]) => (
+                  <option key={val} value={val}>
+                    {lbl}
+                  </option>
+                ))}
+              </select>
+            </>
+          )}
         </div>
 
-        <div className="relative flex-1 min-w-[200px] max-w-xs">
-          <label htmlFor="map-node-search" className="sr-only">
-            Search map nodes
-          </label>
-          <Search
-            className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2"
-            aria-hidden="true"
-          />
-          <input
-            id="map-node-search"
-            type="search"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Filter nodes by name or layer..."
-            className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600"
-          />
-        </div>
+        {mapMode === 'flow' && (
+          <div className="relative flex-1 min-w-[200px] max-w-xs">
+            <label htmlFor="map-node-search" className="sr-only">
+              Search map nodes
+            </label>
+            <Search
+              className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2"
+              aria-hidden="true"
+            />
+            <input
+              id="map-node-search"
+              type="search"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Filter nodes by name or layer..."
+              className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600"
+            />
+          </div>
+        )}
       </div>
 
-      {/* Main Split: Interactive Canvas + Node Inspector */}
+      {mapMode === 'mermaid' ? (
+        <MermaidDiagram report={report} isDark={isDark} />
+      ) : (
+      /* Main Split: Interactive Canvas + Node Inspector */
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 items-stretch">
         <div
           data-testid="architecture-map-canvas"
@@ -486,6 +528,7 @@ export default function ArchitectureMap({
           )}
         </aside>
       </div>
+      )}
     </div>
   );
 }

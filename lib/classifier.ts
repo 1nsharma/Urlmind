@@ -84,7 +84,32 @@ export function classifyUrl(urlInput: string): UrlCategory {
   const host = parsed.hostname.toLowerCase();
   const path = parsed.pathname.toLowerCase();
 
-  // 1. GitHub / GitLab code repositories
+  // 1. Video & Media platforms
+  if (
+    host === 'youtube.com' ||
+    host === 'www.youtube.com' ||
+    host === 'm.youtube.com' ||
+    host === 'youtu.be'
+  ) {
+    return 'media';
+  }
+
+  // 2. Social media platforms
+  if (
+    host === 'x.com' ||
+    host === 'www.x.com' ||
+    host === 'twitter.com' ||
+    host === 'www.twitter.com' ||
+    host === 'instagram.com' ||
+    host === 'www.instagram.com' ||
+    host === 'instagr.am' ||
+    host === 'linkedin.com' ||
+    host === 'www.linkedin.com'
+  ) {
+    return 'social';
+  }
+
+  // 3. GitHub / GitLab code repositories
   if (
     host === 'github.com' ||
     host === 'www.github.com' ||
@@ -94,7 +119,7 @@ export function classifyUrl(urlInput: string): UrlCategory {
     return 'github';
   }
 
-  // 2. API specifications & developer portals
+  // 4. API specifications & developer portals
   if (
     lower.includes('swagger') ||
     lower.includes('openapi') ||
@@ -108,7 +133,7 @@ export function classifyUrl(urlInput: string): UrlCategory {
     return 'api';
   }
 
-  // 3. Documentation & knowledge portals
+  // 5. Documentation & knowledge portals
   if (
     host.startsWith('docs.') ||
     host.startsWith('developer.') ||
@@ -123,7 +148,7 @@ export function classifyUrl(urlInput: string): UrlCategory {
     return 'docs';
   }
 
-  // 4. Articles, research papers, essays
+  // 6. Articles, research papers, essays
   if (
     host.includes('arxiv.org') ||
     host.includes('medium.com') ||
@@ -138,7 +163,7 @@ export function classifyUrl(urlInput: string): UrlCategory {
     return 'article';
   }
 
-  // 5. Interactive web apps / SaaS consoles
+  // 7. Interactive web apps / SaaS consoles
   if (
     host.startsWith('app.') ||
     host.startsWith('studio.') ||
@@ -168,6 +193,10 @@ export function getCategoryLabel(category: UrlCategory): string {
       return 'Codebase Architecture';
     case 'article':
       return 'Knowledge Graph';
+    case 'social':
+      return 'Social & Thread Map';
+    case 'media':
+      return 'Video & Media Graph';
   }
 }
 

@@ -3,7 +3,11 @@ import { analyzeUrlPipeline } from '@/lib/analyzer';
 
 export async function POST(req: NextRequest) {
   try {
-    const body = (await req.json()) as { url?: string; usePreset?: boolean };
+    const body = (await req.json()) as {
+      url?: string;
+      usePreset?: boolean;
+      forceRefresh?: boolean;
+    };
     if (!body?.url || typeof body.url !== 'string') {
       return NextResponse.json(
         { error: 'Please provide a URL string to analyze.' },
@@ -13,6 +17,7 @@ export async function POST(req: NextRequest) {
 
     const report = await analyzeUrlPipeline(body.url, {
       usePreset: Boolean(body.usePreset),
+      forceRefresh: Boolean(body.forceRefresh),
     });
 
     return NextResponse.json({ report });

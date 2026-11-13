@@ -1,6 +1,7 @@
 import * as cheerio from 'cheerio';
+import { extractSocialEvidence } from './adapters/social';
 import { classifyUrl, detectHtmlTechnologies } from './classifier';
-import type { CrawlMetrics, TechItem, UrlCategory } from './types';
+import type { CrawlMetrics, SocialMetadata, TechItem, UrlCategory } from './types';
 
 export interface CrawledUrlContext {
   url: string;
@@ -33,6 +34,7 @@ export interface CrawledUrlContext {
     schemas: string[];
     securitySchemes: string[];
   };
+  socialDetails?: SocialMetadata;
   metrics: CrawlMetrics;
 }
 
@@ -195,6 +197,55 @@ export async function crawlPublicUrl(
   domain: string,
 ): Promise<CrawledUrlContext> {
   const category = classifyUrl(normalizedUrl);
+
+  if (category === 'social' || category === 'media') {
+    const social = await extractSocialEvidence(normalizedUrl);
+    if (social) {
+      const detectedTech: TechItem[] = [
+        {
+          name:
+            social.platform === 'youtube'
+              ? 'YouTube oEmbed API'
+              : social.platform === 'twitter'
+                ? 'X / Twitter oEmbed API'
+                : social.platform === 'instagram'
+                  ? 'OpenGraph / Meta oEmbed'
+                  : 'OpenGraph Metadata',
+          category: 'API / Protocol',
+          confidence: social.accessRestricted ? 'inferred' : 'detected',
+          evidence: social.accessNote || `Extracted ${social.platform} oEmbed & metadata`,
+        },
+      ];
+
+      return {
+        url: normalizedUrl,
+        domain,
+        category,
+        crawlSuccess: true,
+        pageTitle: social.title,
+        metaDescription: social.description || '',
+        headings: [social.title, social.authorName || domain].filter(Boolean),
+        internalLinks: social.authorUrl
+          ? [{ text: social.authorName || 'Author', href: social.authorUrl }]
+          : [],
+        externalLinks: [],
+        scripts: [],
+        detectedTech,
+        textExcerpt: `${social.title}\n${social.authorName ? `Creator: ${social.authorName}\n` : ''}${social.description || ''}\n${social.accessNote || ''}`,
+        socialDetails: social,
+        metrics: {
+          httpStatus: 200,
+          internalLinksCount: social.authorUrl ? 1 : 0,
+          externalLinksCount: 0,
+          headingsCount: 2,
+          scriptsCount: 0,
+          inspectedLabel: social.accessRestricted
+            ? `${social.platform} public preview (restricted scraping)`
+            : `${social.platform} oEmbed & OpenGraph metadata`,
+        },
+      };
+    }
+  }
 
   if (category === 'github' && domain.includes('github.com')) {
     const gh = await crawlGitHubRepo(normalizedUrl, domain);

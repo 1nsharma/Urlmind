@@ -2,21 +2,27 @@
 
 import { useState } from 'react';
 import {
+  AlertTriangle,
   ArrowLeftRight,
   Cpu,
+  Database,
   Download,
   ExternalLink,
   FolderTree,
   GitBranch,
+  ImageOff,
   MessageSquare,
   Moon,
   Network,
   PlayCircle,
+  RefreshCw,
   Sun,
+  Video,
 } from 'lucide-react';
 import { getCategoryLabel } from '@/lib/classifier';
 import type {
   IntelligenceNode,
+  SocialMetadata,
   UrlIntelligenceReport,
   WorkspaceView,
 } from '@/lib/types';
@@ -35,6 +41,8 @@ interface IntelligenceWorkspaceProps {
   onSelectView: (view: WorkspaceView) => void;
   onSelectReport: (report: UrlIntelligenceReport) => void;
   onOpenCompare: () => void;
+  onRefreshLive: () => void;
+  isRefreshing: boolean;
   isDark: boolean;
   onToggleTheme: () => void;
 }
@@ -53,6 +61,39 @@ const VIEW_ITEMS: Array<{
   { id: 'export', label: 'Export Report', icon: Download },
 ];
 
+const PLATFORM_LABELS: Record<SocialMetadata['platform'], string> = {
+  youtube: 'YouTube Video / Channel',
+  twitter: 'X / Twitter Post',
+  instagram: 'Instagram Media',
+  linkedin: 'LinkedIn Page / Post',
+};
+
+function SocialThumbnail({ src, alt }: { src: string; alt: string }) {
+  const [failed, setFailed] = useState(false);
+
+  if (failed) {
+    return (
+      <div className="w-full sm:w-44 h-28 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 flex flex-col items-center justify-center gap-1 text-slate-400 shrink-0">
+        <ImageOff className="w-4 h-4" aria-hidden="true" />
+        <span className="text-[11px]">Thumbnail unavailable</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="w-full sm:w-44 h-28 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 shrink-0">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={src}
+        alt={alt}
+        referrerPolicy="no-referrer"
+        onError={() => setFailed(true)}
+        className="w-full h-full object-cover"
+      />
+    </div>
+  );
+}
+
 export default function IntelligenceWorkspace({
   report,
   history,
@@ -60,6 +101,8 @@ export default function IntelligenceWorkspace({
   onSelectView,
   onSelectReport,
   onOpenCompare,
+  onRefreshLive,
+  isRefreshing,
   isDark,
   onToggleTheme,
 }: IntelligenceWorkspaceProps) {
@@ -75,6 +118,15 @@ export default function IntelligenceWorkspace({
   const detectedCount = report.nodes.filter(
     (n) => n.confidence === 'detected',
   ).length;
+
+  const cacheLabel =
+    report.cacheStatus === 'hit'
+      ? 'Cached Report'
+      : report.cacheStatus === 'bypassed'
+        ? 'Live Analysis (Cache Bypassed)'
+        : report.sourceMethod === 'preset-showcase'
+          ? 'Reference Preset'
+          : 'Live Analysis';
 
   return (
     <div className="max-w-[1440px] mx-auto px-4 sm:px-6 py-6">
@@ -196,6 +248,31 @@ export default function IntelligenceWorkspace({
                   <span className="text-slate-800 dark:text-slate-200 font-medium">
                     {VIEW_ITEMS.find((v) => v.id === activeView)?.label}
                   </span>
+                  <span aria-hidden="true">·</span>
+                  <span className="inline-flex items-center gap-1 font-medium text-slate-700 dark:text-slate-300">
+                    <Database
+                      className={`w-3.5 h-3.5 ${
+                        report.cacheStatus === 'hit'
+                          ? 'text-emerald-600 dark:text-emerald-400'
+                          : 'text-slate-400'
+                      }`}
+                      aria-hidden="true"
+                    />
+                    <span>{cacheLabel}</span>
+                  </span>
+                  <span aria-hidden="true">·</span>
+                  <button
+                    type="button"
+                    disabled={isRefreshing}
+                    onClick={onRefreshLive}
+                    className="inline-flex items-center gap-1 font-medium text-blue-600 dark:text-blue-400 hover:underline disabled:opacity-50 cursor-pointer"
+                  >
+                    <RefreshCw
+                      className={`w-3 h-3 ${isRefreshing ? 'animate-spin' : ''}`}
+                      aria-hidden="true"
+                    />
+                    <span>{isRefreshing ? 'Refreshing...' : 'Refresh Live'}</span>
+                  </button>
                 </div>
                 <h1 className="font-display text-xl sm:text-2xl font-bold text-slate-900 dark:text-white text-balance">
                   {report.title}
@@ -240,6 +317,64 @@ export default function IntelligenceWorkspace({
                 {report.executiveOverview}
               </p>
             )}
+
+            {report.socialMetadata && (
+              <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row gap-4 items-start">
+                {report.socialMetadata.thumbnailUrl && (
+                  <SocialThumbnail
+                    key={report.socialMetadata.thumbnailUrl}
+                    src={report.socialMetadata.thumbnailUrl}
+                    alt={report.socialMetadata.title}
+                  />
+                )}
+                <div className="flex-1 min-w-0 space-y-1.5">
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                    <span className="inline-flex items-center gap-1 font-semibold text-blue-600 dark:text-blue-400">
+                      <Video className="w-3.5 h-3.5" aria-hidden="true" />
+                      <span>{PLATFORM_LABELS[report.socialMetadata.platform]}</span>
+                    </span>
+                    {report.socialMetadata.authorName && (
+                      <>
+                        <span aria-hidden="true">·</span>
+                        {report.socialMetadata.authorUrl ? (
+                          <a
+                            href={report.socialMetadata.authorUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 font-medium text-slate-800 dark:text-slate-200 hover:text-blue-600 dark:hover:text-blue-400"
+                          >
+                            <span>{report.socialMetadata.authorName}</span>
+                            <ExternalLink className="w-3 h-3" aria-hidden="true" />
+                          </a>
+                        ) : (
+                          <span className="font-medium text-slate-800 dark:text-slate-200">
+                            {report.socialMetadata.authorName}
+                          </span>
+                        )}
+                      </>
+                    )}
+                  </div>
+                  <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                    {report.socialMetadata.title}
+                  </p>
+                  {report.socialMetadata.description && (
+                    <p className="text-xs text-slate-600 dark:text-slate-400 line-clamp-2">
+                      {report.socialMetadata.description}
+                    </p>
+                  )}
+                  {report.socialMetadata.accessRestricted &&
+                    report.socialMetadata.accessNote && (
+                      <div className="mt-2 flex items-start gap-2 rounded-lg border border-amber-200 dark:border-amber-900/60 bg-amber-50/70 dark:bg-amber-950/30 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
+                        <AlertTriangle
+                          className="w-3.5 h-3.5 mt-0.5 shrink-0"
+                          aria-hidden="true"
+                        />
+                        <span>{report.socialMetadata.accessNote}</span>
+                      </div>
+                    )}
+                </div>
+              </div>
+            )}
           </section>
 
           {/* Active View Canvas */}
@@ -247,6 +382,7 @@ export default function IntelligenceWorkspace({
             <ArchitectureMap
               report={report}
               onAskAboutNode={handleAskAboutNode}
+              isDark={isDark}
             />
           )}
           {activeView === 'sitemap' && <SitemapView report={report} />}

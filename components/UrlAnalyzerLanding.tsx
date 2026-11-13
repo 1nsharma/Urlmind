@@ -10,6 +10,7 @@ import {
   FileCode2,
   Globe,
   Loader2,
+  RefreshCw,
   ShieldAlert,
 } from 'lucide-react';
 import {
@@ -20,7 +21,10 @@ import {
 import { SHOWCASE_PRESET_METAS } from '@/lib/showcasePresets';
 
 interface UrlAnalyzerLandingProps {
-  onAnalyze: (url: string, options?: { usePreset?: boolean }) => Promise<void>;
+  onAnalyze: (
+    url: string,
+    options?: { usePreset?: boolean; forceRefresh?: boolean },
+  ) => Promise<void>;
   isLoading: boolean;
   pipelineStage: number;
   errorMessage: string | null;
@@ -30,17 +34,20 @@ const PIPELINE_STEPS = [
   {
     step: '01',
     title: 'URL Classifier',
-    detail: 'Detects Website, Web App, GitHub, API Spec, or Documentation.',
+    detail:
+      'Detects Website, Web App, GitHub, API Spec, Docs, YouTube, or Social URLs.',
   },
   {
     step: '02',
     title: 'Intelligent Crawler',
-    detail: 'Fetches public DOM, headers, routes, GitHub trees, or OpenAPI JSON.',
+    detail:
+      'Checks server cache, fetches DOM/GitHub/OpenAPI, or queries public oEmbed APIs.',
   },
   {
     step: '03',
     title: 'AI Analysis Engine',
-    detail: 'Maps architecture, flows, tech stack, and 60s explainer script.',
+    detail:
+      'Maps interactive graphs, Mermaid diagrams, flows, tech stack, and 60s explainer.',
   },
 ];
 
@@ -58,6 +65,7 @@ export default function UrlAnalyzerLanding({
   errorMessage,
 }: UrlAnalyzerLandingProps) {
   const [urlInput, setUrlInput] = useState('');
+  const [forceRefresh, setForceRefresh] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
 
   const trimmed = urlInput.trim();
@@ -72,7 +80,10 @@ export default function UrlAnalyzerLanding({
       return;
     }
     setValidationError(null);
-    await onAnalyze(check.normalizedUrl, { usePreset: false });
+    await onAnalyze(check.normalizedUrl, {
+      usePreset: false,
+      forceRefresh,
+    });
   };
 
   return (
@@ -86,8 +97,8 @@ export default function UrlAnalyzerLanding({
         </h1>
         <p className="mt-4 text-base sm:text-lg text-slate-600 dark:text-slate-300 max-w-2xl mx-auto leading-relaxed">
           Convert any public website, web app, GitHub repository, API documentation,
-          or technical article into an interactive architecture map, sitemap,
-          60-second explainer, and downloadable intelligence report.
+          article, YouTube video, or social post into an interactive graph, live
+          Mermaid diagram, 60-second explainer, and intelligence report.
         </p>
 
         <form
@@ -112,7 +123,7 @@ export default function UrlAnalyzerLanding({
                   setUrlInput(e.target.value);
                   if (validationError) setValidationError(null);
                 }}
-                placeholder="https://react.dev or github.com/vercel/ai"
+                placeholder="https://react.dev, github.com/vercel/ai, or youtube.com/watch?v=..."
                 disabled={isLoading}
                 className="w-full py-2.5 text-sm sm:text-base bg-transparent text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none font-mono"
               />
@@ -137,19 +148,57 @@ export default function UrlAnalyzerLanding({
             </button>
           </div>
 
-          {detectedCategory && (
-            <div className="px-3 pt-2 pb-1 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-              <span>
-                Classifier preview:{' '}
-                <strong className="font-medium text-slate-800 dark:text-slate-200">
-                  {getCategoryLabel(detectedCategory)}
-                </strong>
-              </span>
-              <span className="font-mono text-[11px]">
-                Live crawl + Gemini synthesis
-              </span>
+          <div className="px-3 pt-2 pb-1 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
+            <div className="flex flex-wrap items-center gap-3">
+              {detectedCategory ? (
+                <span>
+                  Classifier preview:{' '}
+                  <strong className="font-medium text-slate-800 dark:text-slate-200">
+                    {getCategoryLabel(detectedCategory)}
+                  </strong>
+                </span>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <span>Quick fill:</span>
+                  <button
+                    type="button"
+                    disabled={isLoading}
+                    onClick={() => {
+                      setValidationError(null);
+                      setUrlInput('https://www.youtube.com/watch?v=M7lc1UVf-VE');
+                    }}
+                    className="font-mono text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                  >
+                    YouTube Video
+                  </button>
+                  <span aria-hidden="true">·</span>
+                  <button
+                    type="button"
+                    disabled={isLoading}
+                    onClick={() => {
+                      setValidationError(null);
+                      setUrlInput('https://x.com/vercel');
+                    }}
+                    className="font-mono text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                  >
+                    X Profile
+                  </button>
+                </div>
+              )}
             </div>
-          )}
+
+            <label className="inline-flex items-center gap-1.5 cursor-pointer select-none text-slate-600 dark:text-slate-400">
+              <input
+                type="checkbox"
+                checked={forceRefresh}
+                disabled={isLoading}
+                onChange={(e) => setForceRefresh(e.target.checked)}
+                className="rounded border-slate-300 dark:border-slate-700 text-blue-600 focus:ring-blue-600"
+              />
+              <RefreshCw className="w-3 h-3 text-slate-400" aria-hidden="true" />
+              <span>Bypass server cache (Force live)</span>
+            </label>
+          </div>
         </form>
 
         {displayError && (
@@ -253,20 +302,20 @@ export default function UrlAnalyzerLanding({
       <section className="mt-12 grid grid-cols-1 lg:grid-cols-3 gap-6 border-t border-slate-200 dark:border-slate-800 pt-10">
         <div>
           <h3 className="font-display text-sm font-semibold text-slate-900 dark:text-white">
-            01. Automatic URL Classification
+            01. Universal URL Classification
           </h3>
           <p className="mt-1.5 text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
-            Routes websites, web applications, GitHub repositories, OpenAPI specs,
-            and documentation portals through tailored extraction rules.
+            Routes websites, web apps, GitHub repositories, OpenAPI specs,
+            documentation portals, YouTube videos, and social posts through tailored adapters.
           </p>
         </div>
         <div>
           <h3 className="font-display text-sm font-semibold text-slate-900 dark:text-white">
-            02. Real Crawl + Grounded Synthesis
+            02. Real Crawl, oEmbed + Server Cache
           </h3>
           <p className="mt-1.5 text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
-            Inspects live HTML DOM routes, HTTP headers, GitHub trees, and OpenAPI
-            definitions before synthesizing interactive graphs and 60s storyboards.
+            Inspects live HTML DOM routes, GitHub trees, OpenAPI JSON, and public
+            oEmbed feeds with persistent server caching for instant repeat lookups.
           </p>
         </div>
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
@@ -275,7 +324,7 @@ export default function UrlAnalyzerLanding({
             <span>Detected vs. Inferred Integrity</span>
           </div>
           <p className="mt-1.5 text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-            Public URLs cannot reveal private databases or server source code.
+            Public URLs cannot reveal private databases or gated social feeds.
             URLMIND labels every node and technology strictly as{' '}
             <strong className="text-slate-800 dark:text-slate-200">Detected</strong>{' '}
             (observable evidence) or{' '}

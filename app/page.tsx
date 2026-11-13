@@ -107,14 +107,14 @@ export default function HomePage() {
 
   const handleAnalyze = async (
     url: string,
-    options: { usePreset?: boolean } = {},
+    options: { usePreset?: boolean; forceRefresh?: boolean } = {},
   ) => {
     setErrorMessage(null);
     setIsLoading(true);
     setPipelineStage(1);
 
-    // Instant deterministic showcase load when clicking a curated preset card
-    if (options.usePreset) {
+    // Instant deterministic showcase load when clicking a curated preset card (unless forceRefresh is requested)
+    if (options.usePreset && !options.forceRefresh) {
       const clean = url.trim().replace(/\/+$/, '').toLowerCase();
       const matched = Object.entries(SHOWCASE_PRESETS).find(
         ([k]) => k.replace(/\/+$/, '').toLowerCase() === clean,
@@ -138,7 +138,11 @@ export default function HomePage() {
       const res = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url, usePreset: Boolean(options.usePreset) }),
+        body: JSON.stringify({
+          url,
+          usePreset: Boolean(options.usePreset),
+          forceRefresh: Boolean(options.forceRefresh),
+        }),
       });
 
       const data = (await res.json()) as {
@@ -221,6 +225,13 @@ export default function HomePage() {
                 setActiveView('map');
               }}
               onOpenCompare={() => setSection('compare')}
+              onRefreshLive={() =>
+                void handleAnalyze(activeReport.normalizedUrl, {
+                  usePreset: false,
+                  forceRefresh: true,
+                })
+              }
+              isRefreshing={isLoading}
               isDark={isDark}
               onToggleTheme={handleToggleTheme}
             />
